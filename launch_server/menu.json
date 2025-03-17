@@ -1,9 +1,20 @@
 {
     "items": [
         {
-            "name": "Run Server",
-            "priority": 0,
-            "action": "bin/launch.sh"
+          "name": "Server",
+          "priority":0,
+          "items": [
+            {
+                "name": "Run Server",
+                "priority": 0,
+                "action": "bin/launch.sh"
+            },
+            {
+                "name": "Stop Server",
+                "priority": 1,
+                "action": "bin/stop.sh"
+            }
+          ]
         }
     ]
 }
