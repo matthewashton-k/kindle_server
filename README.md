@@ -14,3 +14,8 @@
 
 #### NOTE
 This project only works on jailbroken kindles that already have KUAL installed, and you will need the armv7-unknown-linux-musleabihf target toolchain installed
+
+#### Screenshots
+
+![home](home.png "Home Page")
+![file browser](file_browser.png "File Browser")
