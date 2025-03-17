@@ -4,6 +4,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use mime_guess::mime;
 use serde::Deserialize;
 use tokio::fs;
 use std::{
@@ -128,40 +129,78 @@ async fn root() -> impl IntoResponse {
     )
 }
 
-// New file browser handler
 async fn file_browser(Path(path): Path<String>) -> impl IntoResponse {
     let path = PathBuf::from(path);
-    match handle_directory_listing(&path).await {
-        Ok(html) => Html(html),
-        Err(e) => Html(format!("Error: {}", e)),
+    if !path.exists() {
+        return Html("Error: File not found".to_string()).into_response();
     }
+
+    if path.is_dir() {
+        match handle_directory_listing(&path).await {
+            Ok(html) => Html(html).into_response(),
+            Err(e) => Html(format!("Error: {}", e)).into_response(),
+        }
+    } else {
+        let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
+        let mime_type = mime_guess::from_path(&path).first_or_octet_stream();
+
+        match fs::read(&path).await {
+            Ok(content) => {
+                if mime_type.type_() == mime::TEXT {
+                    match String::from_utf8(content.clone()) {
+                        Ok(text) => Html(format!("<pre>{}</pre>", text)).into_response(),
+                        Err(_) => create_octet_response(content, filename),
+                    }
+                } else {
+                    create_octet_response(content, filename)
+                }
+            }
+            Err(e) => Html(format!("Error reading file: {}", e)).into_response(),
+        }
+    }
+}
+
+fn create_octet_response(content: Vec<u8>, filename: &str) -> axum::response::Response {
+    let headers = [
+        ("Content-Type", "application/octet-stream"),
+        (
+            "Content-Disposition",
+            &format!("attachment; filename=\"{}\"", filename),
+        ),
+    ];
+
+    (headers, content).into_response()
 }
 
 async fn handle_directory_listing(path: &PathBuf) -> Result<String, std::io::Error> {
     let mut html = String::new();
-    
-    html.push_str("<h2>File Browser</h2>");
-    html.push_str("<ul>");  
-    if path.is_dir() {
-        for entry in std::fs::read_dir(path)? {
-            let entry = entry?;
-            let entry_path = entry.path();
-            let name = entry.file_name().to_string_lossy().into_owned();
-            
-            if entry_path.is_dir() {
-                html.push_str(&format!(
-                    "<li>📁 <a href='/files/{}/'>{}/</a></li>",
-                    entry_path.to_string_lossy(), name
-                ));
-            } else {
-                html.push_str(&format!(
-                    "<li>📄 <a href='/files/{}'>{}</a></li>",
-                    entry_path.to_string_lossy(), name
-                ));
-            }
+    html.push_str("<h2>File Browser</h2><ul>");
+
+    let mut entries = fs::read_dir(path).await?;
+    let mut root = path.clone();
+    root.pop();
+    html.push_str(&format!(
+        "<li>📁 <a href='/files/{}/'>{}/</a></li>",
+        root.to_string_lossy(),
+        ".."
+    ));
+    while let Some(entry) = entries.next_entry().await? {
+        let entry_path = entry.path();
+        let name = entry.file_name().to_string_lossy().into_owned();
+
+        if entry_path.is_dir() {
+            html.push_str(&format!(
+                "<li>📁 <a href='/files/{}/'>{}/</a></li>",
+                entry_path.display(),
+                name
+            ));
+        } else {
+            html.push_str(&format!(
+                "<li>📄 <a href='/files/{}'>{}</a></li>",
+                entry_path.display(),
+                name
+            ));
         }
-    } else {
-        return Ok(format!("File content:<pre>{}</pre>", std::fs::read_to_string(path)?));
     }
 
     html.push_str("</ul>");
