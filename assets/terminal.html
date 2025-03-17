@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kindle Web Terminal</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f0f0f0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+        header {
+            background-color: #333;
+            color: white;
+            padding: 10px;
+            text-align: center;
+        }
+        .container {
+            flex: 1;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            min-height: 0; /* Add this line */
+        }
+        /* #terminal {
+            flex: 1;
+            background-color: #000;
+            color: #00ff00;
+            font-family: monospace;
+            padding: 10px;
+            overflow-y: auto; 
+            border-radius: 5px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            min-height: 0;
+        } */
+        
+        #terminal {
+            flex: 1;
+            background-color: #000;
+            color: #00ff00;
+            font-family: monospace;
+            padding: 10px;
+            border-radius: 5px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            overflow-y: auto; /* Ensures scrolling stays inside the terminal */
+            display: flex;
+            flex-direction: column-reverse;
+            min-height: 100px; /* Prevents collapsing when empty */
+        }
+        .input-container {
+            display: flex;
+            margin-top: 10px;
+        }
+        #command-input {
+            flex: 1;
+            padding: 8px;
+            font-family: monospace;
+            border: 1px solid #ccc;
+            border-radius: 3px 0 0 3px;
+        }
+        #send-button {
+            padding: 8px 15px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 0 3px 3px 0;
+            cursor: pointer;
+        }
+        #send-button:hover {
+            background-color: #45a049;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .control-button {
+            padding: 5px 10px;
+            background-color: #666;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        .control-button:hover {
+            background-color: #555;
+        }
+        .status {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            padding: 5px 10px;
+            border-radius: 3px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .connected {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .disconnected {
+            background-color: #f44336;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Kindle Web Terminal</h1>
+    </header>
+    <div id="connection-status" class="status disconnected">Disconnected</div>
+    <div class="container">
+        <div class="controls">
+            <button id="clear-button" class="control-button">Clear Terminal</button>
+            <button id="reconnect-button" class="control-button">Reconnect</button>
+            <button id="ctrl-c-button" class="control-button">Ctrl+C</button>
+            <button id="ctrl-d-button" class="control-button">Ctrl+D</button>
+        </div>
+        <div id="terminal">Welcome to Kindle Web Terminal. Connecting...</div>
+        <div class="input-container">
+            <input type="text" id="command-input" placeholder="Enter command...">
+            <button id="send-button">Send</button>
+        </div>
+    </div>
+
+    <script>
+        const terminal = document.getElementById('terminal');
+        const commandInput = document.getElementById('command-input');
+        const sendButton = document.getElementById('send-button');
+        const clearButton = document.getElementById('clear-button');
+        const reconnectButton = document.getElementById('reconnect-button');
+        const ctrlCButton = document.getElementById('ctrl-c-button');
+        const ctrlDButton = document.getElementById('ctrl-d-button');
+        const connectionStatus = document.getElementById('connection-status');
+        
+        let socket;
+        // Maximum number of lines to keep in the terminal
+        const MAX_TERMINAL_LINES = 1000;
+        // Store terminal content as an array of lines for better performance
+        let terminalLines = ['Welcome to Kindle Web Terminal. Connecting...'];
+
+        function createWebSocket() {
+            // Get the current protocol and hostname
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/terminal`;
+            
+            // Close existing socket if it exists
+            if (socket) {
+                socket.close();
+            }
+            
+            // Create a new WebSocket connection
+            socket = new WebSocket(wsUrl);
+            
+            socket.onopen = () => {
+                appendToTerminal('> Connection established.');
+                connectionStatus.textContent = 'Connected';
+                connectionStatus.className = 'status connected';
+                commandInput.focus();
+            };
+            
+            socket.onmessage = (event) => {
+                appendToTerminal(event.data);
+            };
+            
+            socket.onclose = () => {
+                appendToTerminal('> Connection closed.');
+                connectionStatus.textContent = 'Disconnected';
+                connectionStatus.className = 'status disconnected';
+            };
+            
+            socket.onerror = (error) => {
+                appendToTerminal(`> WebSocket error: ${error.message || 'Unknown error'}`);
+                connectionStatus.textContent = 'Error';
+                connectionStatus.className = 'status disconnected';
+            };
+        }
+
+        function appendToTerminal(text) {
+            // Split incoming text into lines and add to array
+            const newLines = text.split('\n');
+            
+            // Add a blank line before new content if we're not at the start
+            if (terminalLines.length > 1) {
+                terminalLines.push('');
+            }
+            
+            // Add new lines to our array
+            terminalLines = terminalLines.concat(newLines);
+            
+            // Keep only the last MAX_TERMINAL_LINES lines to prevent browser from crashing
+            if (terminalLines.length > MAX_TERMINAL_LINES) {
+                terminalLines = terminalLines.slice(terminalLines.length - MAX_TERMINAL_LINES);
+            }
+            
+            // Update the terminal display with current lines
+            updateTerminalDisplay();
+        }
+        
+        function updateTerminalDisplay() {
+            requestAnimationFrame(() => {
+                terminal.innerHTML = terminalLines.join('<br>');
+                // // Ensure scrolling remains at the bottom
+                // if (terminal.scrollHeight > terminal.clientHeight) {
+                //     terminal.scrollTop = terminal.scrollHeight;
+                // }
+            });
+        }
+
+        
+        function sendCommand() {
+            const command = commandInput.value;
+            if (command.trim() && socket && socket.readyState === WebSocket.OPEN) {
+                socket.send(command + '\n');
+                commandInput.value = '';
+            }
+        }
+        
+        sendButton.addEventListener('click', sendCommand);
+        
+        commandInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                sendCommand();
+            }
+        });
+        
+        clearButton.addEventListener('click', () => {
+            terminalLines = ['Terminal cleared.'];
+            updateTerminalDisplay();
+        });
+        
+        reconnectButton.addEventListener('click', () => {
+            appendToTerminal('> Reconnecting...');
+            createWebSocket();
+        });
+        
+        ctrlCButton.addEventListener('click', () => {
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.send('\x03'); 
+                appendToTerminal('^C');
+            }
+        });
+        
+        ctrlDButton.addEventListener('click', () => {
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.send('\x04');
+                appendToTerminal('^D');
+            }
+        });
+        
+        // Initialize WebSocket connection
+        createWebSocket();
+        
+        // Command history support
+        let commandHistory = [];
+        let historyIndex = -1;
+        
+        commandInput.addEventListener('keydown', (event) => {
+            if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                if (historyIndex < commandHistory.length - 1) {
+                    historyIndex++;
+                    commandInput.value = commandHistory[historyIndex];
+                }
+            } else if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                if (historyIndex > 0) {
+                    historyIndex--;
+                    commandInput.value = commandHistory[historyIndex];
+                } else if (historyIndex === 0) {
+                    historyIndex = -1;
+                    commandInput.value = '';
+                }
+            } else if (event.key === 'Enter') {
+                const command = commandInput.value.trim();
+                if (command) {
+                    // Add command to the beginning of history
+                    commandHistory.unshift(command);
+                    // Limit history size
+                    if (commandHistory.length > 50) {
+                        commandHistory.pop();
+                    }
+                    historyIndex = -1;
+                }
+                sendCommand();
+            }
+        });
+    </script>
+</body>
+</html>

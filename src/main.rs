@@ -14,6 +14,10 @@ use std::{
 };
 use tower_http::{trace::TraceLayer, services::ServeDir};
 
+use crate::terminal::terminal_handler;
+
+mod terminal;
+
 #[derive(Debug, Deserialize)]
 struct ReverseShellQuery {
     ip: String,
@@ -24,6 +28,8 @@ struct ReverseShellQuery {
 async fn main() {
     let app = Router::new()
         .route("/", get(root))
+        .route("/terminal", get(terminal_handler))
+        .route("/webterminal", get(web_term))
         .route("/sysinfo", get(sysinfo))
         .route("/jailbreak", get(jailbreak_info))
         .route("/reverse_shell", post(reverse_shell))
@@ -35,9 +41,13 @@ async fn main() {
         .await
         .expect("couldn't bind to port 3000");
     println!("Listening on {}", addr);
-    axum::serve(listener, app)
+    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
         .await
         .expect("failed to serve");
+}
+
+async fn web_term() -> impl IntoResponse {
+    Html(include_str!("../assets/terminal.html"))
 }
 
 async fn reverse_shell(Form(query): Form<ReverseShellQuery>) -> impl IntoResponse {
@@ -118,6 +128,7 @@ async fn root() -> impl IntoResponse {
             <li><a href="/sysinfo">System Information</a></li>
             <li><a href="/jailbreak">Jailbreak Details</a></li>
             <li><a href="/files//">File Browser</a></li>
+            <li><a href="/webterminal">Web Terminal</a></li>
         </ul>
         <h2>Reverse Shell</h2>
         <form method="post" action="/reverse_shell">
