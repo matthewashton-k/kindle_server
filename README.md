@@ -2,6 +2,7 @@
 Built with axum and meant to run on a very old kindle I have been hacking over spring break.
 
 #### Features
+* Websocket based terminal emulator.
 * File Server
 * Reverse Shell Launcher (I couldn't get ssh to work on kindle so this is useful)
 * Information and Diagnostics Viewing
@@ -17,6 +18,6 @@ Built with axum and meant to run on a very old kindle I have been hacking over s
 This project only works on jailbroken kindles that already have KUAL installed, and you will need the armv7-unknown-linux-musleabihf target toolchain installed
 
 #### Screenshots
-
+![term](webterm.png "Terminal Emulator")
 ![home](home.png "Home Page")
 ![file browser](file_browser.png "File Browser")
