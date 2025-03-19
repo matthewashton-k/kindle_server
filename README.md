@@ -20,5 +20,6 @@ This project only works on jailbroken kindles that already have KUAL installed, 
 
 #### Screenshots
 ![term](webterm.png "Terminal Emulator")
+![todos](todos.png "Todo Page")
 ![home](home.png "Home Page")
 ![file browser](file_browser.png "File Browser")
