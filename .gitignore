@@ -1,1 +1,9 @@
 /target
+/target-lua
+/ota
+/screenshots
+/settings
+/lua*
+/data
+/clipboard
+/cache

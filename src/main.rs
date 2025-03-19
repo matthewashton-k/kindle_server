@@ -1,11 +1,12 @@
 use axum::{
     extract::{Form, Path},
-    response::{Html, IntoResponse},
+    response::{Html, IntoResponse, Redirect},
     routing::{get, post},
     Router,
 };
 use mime_guess::mime;
 use serde::Deserialize;
+use todos::SavedTodos;
 use tokio::fs;
 use std::{
     net::{SocketAddr, TcpStream},
@@ -17,6 +18,7 @@ use tower_http::{trace::TraceLayer, services::ServeDir};
 use crate::terminal::terminal_handler;
 
 mod terminal;
+mod todos;
 
 #[derive(Debug, Deserialize)]
 struct ReverseShellQuery {
@@ -33,7 +35,12 @@ async fn main() {
         .route("/sysinfo", get(sysinfo))
         .route("/jailbreak", get(jailbreak_info))
         .route("/reverse_shell", post(reverse_shell))
-        .route("/files/{*path}", get(file_browser))  // New file browser route
+        .route("/files/{*path}", get(file_browser))
+        .route("/todos", get(get_todos))
+        .route("/todos/add", post(add_todo))
+        .route("/todos/check/{index}", post(check_todo))
+        .route("/todos/remove/{index}", post(remove_todo))
+
         .layer(TraceLayer::new_for_http());
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
@@ -129,6 +136,7 @@ async fn root() -> impl IntoResponse {
             <li><a href="/jailbreak">Jailbreak Details</a></li>
             <li><a href="/files//">File Browser</a></li>
             <li><a href="/webterminal">Web Terminal</a></li>
+            <li><a href="/todos">Todo Manager</a></li>
         </ul>
         <h2>Reverse Shell</h2>
         <form method="post" action="/reverse_shell">
@@ -138,6 +146,99 @@ async fn root() -> impl IntoResponse {
         </form>
         "#,
     )
+}
+
+async fn get_todos() -> impl IntoResponse {
+    let saved_todos = load_todos().await;
+    
+    let mut todos_html = String::new();
+    for (i, todo) in saved_todos.todos.iter().enumerate() {
+        todos_html.push_str(&format!(
+            r#"<li style="margin: 10px 0;">
+                <form method="post" action="/todos/check/{}" style="display: inline-block;">
+                    <input type="checkbox" onchange="{onchange}" {checked} style="margin-right: 8px;">
+                </form>
+                <span style="{}">{text}</span>
+                <form method="post" action="/todos/remove/{}" style="display: inline-block; margin-left: 10px;">
+                    <button type="submit" style="color: red; border: none; background: none;">✕</button>
+                </form>
+            </li>"#,
+            i,
+            if todo.checked { "text-decoration: line-through;" } else { "" },
+            i,
+            onchange = "this.form.submit()",
+            checked = if todo.checked { "checked" } else { "" },
+            text = html_escape(&todo.text)
+        ));
+    }
+    
+    Html(format!(
+        r#"
+        <html>
+            <head>
+                <title>Todos</title>
+                <style>
+                    body {{ max-width: 600px; margin: 20px auto; padding: 0 20px; }}
+                    form {{ margin: 20px 0; }}
+                    ul {{ list-style: none; padding: 0; }}
+                    input[type="text"] {{ padding: 8px; width: 300px; }}
+                    button {{ padding: 8px 12px; }}
+                </style>
+            </head>
+            <body>
+                <h1>Todo List</h1>
+                <form method="post" action="/todos/add">
+                    <input type="text" name="text" placeholder="New todo" required>
+                    <button type="submit">Add</button>
+                </form>
+                <ul>{}</ul>
+                <p><a href="/">← Back to home</a></p>
+            </body>
+        </html>
+        "#,
+        todos_html
+    ))
+}
+
+async fn add_todo(Form(form): Form<AddTodoForm>) -> impl IntoResponse {
+    let mut saved_todos = load_todos().await;
+    saved_todos.add_todo(form.text);
+    saved_todos.save().unwrap();
+    Redirect::to("/todos")
+}
+
+async fn check_todo(Path(index): Path<usize>) -> impl IntoResponse {
+    let mut saved_todos = load_todos().await;
+    let _ = saved_todos.check(index);
+    saved_todos.save().unwrap();
+    Redirect::to("/todos")
+}
+
+async fn remove_todo(Path(index): Path<usize>) -> impl IntoResponse {
+    let mut saved_todos = load_todos().await;
+    let _ = saved_todos.remove_todo(index);
+    saved_todos.save().unwrap();
+    Redirect::to("/todos")
+}
+
+// Helper functions
+async fn load_todos() -> SavedTodos {
+    let user = std::env::var("USER").unwrap_or_else(|_| "root".to_string());
+    let path = format!("/mnt/us/koreader/settings/todos.lua");
+    
+    SavedTodos::load(&path).unwrap_or_else(|_| SavedTodos {
+        path: "/mnt/us/koreader/settings/todos.lua".to_owned(),
+        todos: Vec::new(),
+    })
+}
+
+fn html_escape(s: &str) -> String {
+    ammonia::clean(s)
+}
+
+#[derive(Deserialize)]
+struct AddTodoForm {
+    text: String,
 }
 
 async fn file_browser(Path(path): Path<String>) -> impl IntoResponse {
