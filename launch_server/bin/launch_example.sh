@@ -2,6 +2,7 @@
 EXTENSION="/mnt/us/extensions/launch_server"
 killall kindle_server
 iptables -A INPUT -p tcp --dport 3000 -j ACCEPT
+export SCRIPT_URL="google script url here"
 (${EXTENSION}/bin/kindle_server) </dev/null &>/dev/null &
 
 IP=$(ifconfig wlan0 | grep -o "inet addr:[0-9.]*" | cut -d: -f2)
