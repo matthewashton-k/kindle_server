@@ -40,7 +40,9 @@ async fn main() {
         .route("/todos/add", post(add_todo))
         .route("/todos/check/{index}", post(check_todo))
         .route("/todos/remove/{index}", post(remove_todo))
-
+        .route("/todos/json", get(get_todos_json))
+        .route("/todos/push_google", post(push_to_google))
+        .route("/todos/pull_google", post(pull_from_google))
         .layer(TraceLayer::new_for_http());
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
@@ -148,6 +150,12 @@ async fn root() -> impl IntoResponse {
     )
 }
 
+
+async fn get_todos_json() -> impl IntoResponse {
+    let saved_todos = load_todos().await;
+    axum::Json(saved_todos.todos)
+}
+
 async fn get_todos() -> impl IntoResponse {
     let saved_todos = load_todos().await;
     
@@ -183,10 +191,26 @@ async fn get_todos() -> impl IntoResponse {
                     ul {{ list-style: none; padding: 0; }}
                     input[type="text"] {{ padding: 8px; width: 300px; }}
                     button {{ padding: 8px 12px; }}
+                    .sync-buttons {{
+                        margin: 20px 0;
+                        display: flex;
+                        gap: 10px;
+                    }}
+                    .sync-buttons form {{
+                        margin: 0;
+                    }}
                 </style>
             </head>
             <body>
                 <h1>Todo List</h1>
+                <div class="sync-buttons">
+                    <form method="post" action="/todos/push_google">
+                        <button type="submit">Push to Google</button>
+                    </form>
+                    <form method="post" action="/todos/pull_google">
+                        <button type="submit">Pull from Google</button>
+                    </form>
+                </div>
                 <form method="post" action="/todos/add">
                     <input type="text" name="text" placeholder="New todo" required>
                     <button type="submit">Add</button>
@@ -223,13 +247,45 @@ async fn remove_todo(Path(index): Path<usize>) -> impl IntoResponse {
 
 // Helper functions
 async fn load_todos() -> SavedTodos {
-    let user = std::env::var("USER").unwrap_or_else(|_| "root".to_string());
-    let path = format!("/mnt/us/koreader/settings/todos.lua");
-    
+    let path;
+    #[cfg(target_arch="x86_64")]
+    {
+        let user = std::env::var("USER").unwrap_or_else(|_| "root".to_string());
+        path = format!("/home/{user}/.config/koreader/settings/todos.lua");
+    }
+    #[cfg(target_arch="arm")]
+    {
+        path = format!("/mnt/us/koreader/settings/todos.lua");
+    }
     SavedTodos::load(&path).unwrap_or_else(|_| SavedTodos {
         path: "/mnt/us/koreader/settings/todos.lua".to_owned(),
         todos: Vec::new(),
     })
+}
+
+async fn push_to_google() -> impl IntoResponse {
+    let saved_todos = load_todos().await;
+    if let Err(e) = saved_todos.push_to_google().await {
+        return Html(format!("Error pushing to Google: {}", e)).into_response();
+    }
+    Redirect::to("/todos").into_response()
+}
+
+async fn pull_from_google() -> impl IntoResponse {
+    let mut saved_todos = match SavedTodos::load_from_google().await {
+        Ok(todos) => todos,
+        Err(e) => return Html(format!("Error pulling from Google: {}", e)).into_response(),
+    };
+    
+    // Preserve the original path
+    let original_path = load_todos().await.path;
+    saved_todos.path = original_path;
+    
+    if let Err(e) = saved_todos.save() {
+        return Html(format!("Error saving local todos: {}", e)).into_response();
+    }
+    
+    Redirect::to("/todos").into_response()
 }
 
 fn html_escape(s: &str) -> String {

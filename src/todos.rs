@@ -1,8 +1,9 @@
 use mlua::{Lua, LuaSerdeExt};
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::fmt::Write as _;
+use std::{fmt::Write as _, env};
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Todo {
     pub text: String,
     pub checked: bool,
@@ -13,6 +14,25 @@ pub struct SavedTodos {
     #[serde(skip)]
     pub path: String,
     pub todos: Vec<Todo>,
+}
+#[derive(serde::Deserialize)]
+struct GoogleTask {
+    id: String,
+    title: String,
+    completed: bool,
+}
+
+#[derive(serde::Serialize)]
+struct GoogleTaskSync {
+    title: String,
+    completed: bool,
+    notes: String,
+}
+
+#[derive(serde::Deserialize)]
+struct TaskList {
+    id: String,
+    name: String,
 }
 
 impl SavedTodos {
@@ -29,6 +49,63 @@ impl SavedTodos {
         })?;
         saved_todos.path = path.to_string();
         Ok(saved_todos)
+    }
+    
+    pub async fn load_from_google() -> Result<Self, std::io::Error> {
+        let script_url = env::var("SCRIPT_URL")
+            .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "SCRIPT_URL not set"))?;
+        
+        let client = Client::new();
+        let response = client.get(&script_url)
+            .query(&[("action", "getTasks"), ("taskListId", "@default")])
+            .send().await
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+        
+        let google_tasks: Vec<GoogleTask> = response.json().await
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+    
+        let todos = google_tasks.into_iter().map(|task| Todo {
+            text: task.title,
+            checked: task.completed,
+        }).collect();
+    
+        Ok(SavedTodos {
+            path: String::new(), // Will be set when saved
+            todos,
+        })
+    }
+    
+    
+    pub async fn push_to_google(&self) -> Result<(), std::io::Error> {
+        let script_url = env::var("SCRIPT_URL")
+            .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "SCRIPT_URL not set"))?;
+
+        let client = Client::new();
+        
+        // Convert todos to GoogleTaskSync format
+        let sync_tasks: Vec<GoogleTaskSync> = self.todos.iter().map(|todo| GoogleTaskSync {
+            title: todo.text.clone(),
+            completed: todo.checked,
+            notes: String::new(), // Add any additional metadata here if needed
+        }).collect();
+
+        let response = client.post(&script_url)
+            .form(&[
+                ("action", "syncTasks"),
+                ("taskListId", "@default"),
+                ("tasks", &serde_json::to_string(&sync_tasks).unwrap()),
+            ])
+            .send().await
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+
+        if !response.status().is_success() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Google sync failed: {}", response.text().await.unwrap_or_default())
+            ));
+        }
+
+        Ok(())
     }
 
     pub fn add_todo(&mut self, text: String) {
