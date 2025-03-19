@@ -6,6 +6,7 @@ Built with axum and meant to run on a very old kindle I have been hacking over s
 * File Server
 * Reverse Shell Launcher (I couldn't get ssh to work on kindle so this is useful)
 * Information and Diagnostics Viewing
+* Integration with [my Todo-App koreader plugin.](https://github.com/matthewashton-k/todo-koplugin)
 
 
 #### Usage 
