@@ -2,6 +2,7 @@
 Built with axum and meant to run on a very old kindle I have been hacking over spring break.
 
 #### Features
+* Google Tasks sync.
 * Websocket based terminal emulator.
 * File Server
 * Reverse Shell Launcher (I couldn't get ssh to work on kindle so this is useful)
